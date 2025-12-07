@@ -1,0 +1,9 @@
+flask
+os
+traceback
+joblib
+pandas
+numpy
+google.generativeai
+sklearn
+imblearn
