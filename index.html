@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Medical Assistant</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; background:#f4f6f8; margin:0; padding:20px; }
+    .container { max-width:900px; margin:0 auto; }
+    .card { background:#fff; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,0.08); padding:18px; margin-bottom:18px; }
+    h1 { margin:0 0 10px 0; font-size:22px; }
+    .form-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .form-grid label { font-size:12px; color:#333; display:block; margin-bottom:6px; }
+    .form-grid input { padding:10px; border-radius:8px; border:1px solid #ddd; width:100%; box-sizing:border-box; }
+    .btn { background:#2563eb; color:white; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; }
+    .btn:disabled { opacity:0.6; cursor:not-allowed; }
+    .chat { height:360px; overflow:auto; padding:12px; border-radius:10px; background:#eef2f7; display:flex; flex-direction:column; gap:8px; }
+    .bubble { max-width:80%; padding:10px 12px; border-radius:12px; }
+    .user { align-self:flex-end; background:#2563eb; color:white; border-bottom-right-radius:2px; }
+    .bot { align-self:flex-start; background:white; color:#111; border-bottom-left-radius:2px; }
+    .muted { font-size:12px; color:#666; margin-top:6px; }
+    .followup { margin-top:12px; display:flex; gap:8px; }
+    .followup input { flex:1; padding:10px; border-radius:8px; border:1px solid #ddd; }
+    .confidence { font-weight:600; font-size:13px; margin-top:6px; }
+    @media (max-width:720px) { .form-grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>AI Medical Assistant — Liver Risk (Single UI)</h1>
+      <p class="muted">Enter the 15 values in the order specified. Then click <strong>Diagnose</strong>. The assistant will run the model and then explain the result.</p>
+
+      <form id="featureForm">
+        <div class="form-grid">
+          <div><label>1. Duration_of_alcohol_consumptionyears</label><input name="f0" type="number" step="any" required></div>
+          <div><label>2. Total_Bilirubin_mgdl</label><input name="f1" type="number" step="any" required></div>
+          <div><label>3. RBC_million_cellsmicroliter</label><input name="f2" type="number" step="any" required></div>
+
+          <div><label>4. USG_Abdomen_diffuse_liver_or_not (0/1)</label><input name="f3" type="number" step="1" min="0" max="1" required></div>
+          <div><label>5. MCHC_gramsdeciliter</label><input name="f4" type="number" step="any" required></div>
+          <div><label>6. Direct_mgdl</label><input name="f5" type="number" step="any" required></div>
+
+          <div><label>7. ALPhosphatase_UL</label><input name="f6" type="number" step="any" required></div>
+          <div><label>8. Platelet_Count_lakhsmm</label><input name="f7" type="number" step="any" required></div>
+          <div><label>9. Lymphocytes_</label><input name="f8" type="number" step="any" required></div>
+
+          <div><label>10. AG_Ratio</label><input name="f9" type="number" step="any" required></div>
+          <div><label>11. SGOTAST_UL</label><input name="f10" type="number" step="any" required></div>
+          <div><label>12. PCV_</label><input name="f11" type="number" step="any" required></div>
+
+          <div><label>13. Total_Count</label><input name="f12" type="number" step="any" required></div>
+          <div><label>14. Albumin_gdl</label><input name="f13" type="number" step="any" required></div>
+          <div><label>15. Indirect_mgdl</label><input name="f14" type="number" step="any" required></div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <button class="btn" id="diagnoseBtn" type="submit">Diagnose</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="chat" id="chatWindow">
+        <!-- chat bubbles will be appended here -->
+        <div class="bubble bot"><strong>Assistant:</strong> Fill the form above and click Diagnose. You'll get prediction, confidence and a simple explanation from the AI.</div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div class="muted">Follow-up question (ask the assistant about the result):</div>
+        <div class="followup">
+          <input id="followupInput" placeholder="Ask a follow-up question (e.g. 'What tests do I need?')" />
+          <button id="askBtn" class="btn">Ask</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+ <script>
+    const chatWindow = document.getElementById('chatWindow');
+    const diagnoseBtn = document.getElementById('diagnoseBtn');
+    const form = document.getElementById('featureForm');
+    const askBtn = document.getElementById('askBtn');
+    const followupInput = document.getElementById('followupInput');
+
+    // --- ADD: Define the expected feature names IN ORDER ---
+    const featureNames = [
+        'Duration_of_alcohol_consumptionyears', 'Total_Bilirubin_mgdl',
+        'RBC_million_cellsmicroliter', 'USG_Abdomen_diffuse_liver_or_not',
+        'MCHC_gramsdeciliter', 'Direct_mgdl', 'ALPhosphatase_UL',
+        'Platelet_Count_lakhsmm', 'Lymphocytes_', 'AG_Ratio', 'SGOTAST_UL',
+        'PCV_', 'Total_Count', 'Albumin_gdl', 'Indirect_mgdl'
+    ];
+    // --------------------------------------------------------
+
+    function appendBubble(text, who='bot') {
+      const el = document.createElement('div');
+      el.className = 'bubble ' + (who === 'user' ? 'user' : 'bot');
+      el.innerHTML = text; // Use innerHTML to render the <strong> tags
+      chatWindow.appendChild(el);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      diagnoseBtn.disabled = true;
+
+      // --- FIX: Create a dictionary instead of a list ---
+      const featureData = {};
+      let inputSummary = '<ul>'; // For display
+      for (let i = 0; i < featureNames.length; i++) {
+        const inputName = 'f' + i; // Name used in HTML form (f0, f1, ...)
+        const featureName = featureNames[i]; // Actual feature name for the backend
+        const valueStr = form.elements[inputName].value;
+        const valueNum = valueStr === '' ? null : Number(valueStr); // Keep null for empty, convert to number
+
+        // Add to the dictionary for the backend
+        featureData[featureName] = valueNum;
+
+        // Add to the summary string for display in chat
+        inputSummary += `<li>${featureName}: ${valueStr === '' ? '<i>(empty)</i>' : valueStr}</li>`;
+      }
+      inputSummary += '</ul>';
+      // ----------------------------------------------------
+
+      // Display the structured input in the chat
+      appendBubble(`<strong>You (input):</strong>${inputSummary}`, 'user');
+
+      try {
+        const resp = await fetch('/diagnose', { // Ensure this endpoint matches app.py
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          // --- FIX: Send the dictionary directly ---
+          body: JSON.stringify(featureData)
+          // ----------------------------------------
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+           // Display specific error from backend if available
+          appendBubble(`<strong>Assistant (error):</strong><br>${data.error || JSON.stringify(data)}`, 'bot');
+        } else {
+          const predText = data.prediction === 1 ? 'Possible liver cirrhosis' : 'No signs of liver cirrhosis detected';
+          // Check if probability exists and is a number before formatting
+          const confText = (typeof data.probability === 'number')
+                           ? ('Confidence: ' + (data.probability*100).toFixed(1) + '%')
+                           : '(Confidence not available)';
+          appendBubble(`<strong>Prediction:</strong> ${predText}<br><span class="confidence">${confText}</span>`, 'bot');
+
+          // Ensure explanation exists before displaying
+          const explanation = data.explanation || "(No explanation received)";
+          appendBubble(`<strong>AI Explanation:</strong><br>${explanation.replace(/\n/g, '<br>')}`, 'bot'); // Replace newlines for HTML
+        }
+      } catch (err) {
+        appendBubble('<strong>Assistant (error):</strong><br>Network or script error: ' + err.toString(), 'bot');
+      } finally {
+        diagnoseBtn.disabled = false;
+      }
+    });
+
+    // --- Follow-up chat (Keep as is) ---
+    askBtn.addEventListener('click', async () => {
+        const text = followupInput.value.trim();
+        if (!text) return;
+        // Use innerHTML here too if you want bold formatting
+        appendBubble('<strong>You:</strong><br>' + text.replace(/</g, "&lt;").replace(/>/g, "&gt;"), 'user'); // Basic sanitation
+        followupInput.value = '';
+        askBtn.disabled = true;
+        appendBubble('<strong>Assistant:</strong> Thinking...', 'bot'); // Thinking indicator
+
+        // Find and remove previous thinking bubble if any
+        const thinkingBubbles = chatWindow.querySelectorAll('.bubble.bot');
+        if(thinkingBubbles.length > 1 && thinkingBubbles[thinkingBubbles.length - 2].innerHTML.includes('Thinking...')) {
+            thinkingBubbles[thinkingBubbles.length - 2].remove();
+        }
+
+
+        try {
+            const resp = await fetch('/chat', { // Ensure this endpoint matches app.py
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ message: text })
+            });
+            const data = await resp.json();
+
+             // Remove the "Thinking..." bubble before adding the real response or error
+            const currentThinkingBubble = thinkingBubbles[thinkingBubbles.length - 1];
+             if (currentThinkingBubble && currentThinkingBubble.innerHTML.includes('Thinking...')) {
+                currentThinkingBubble.remove();
+             }
+
+
+            if (!resp.ok) {
+                 appendBubble(`<strong>Assistant (error):</strong><br>${data.error || JSON.stringify(data)}<br><small>${data.details || ''}</small>`, 'bot');
+                // Optionally display available models if provided in error
+                if(data.available_models_or_error) {
+                    appendBubble(`<i>Debug Info: ${JSON.stringify(data.available_models_or_error)}</i>`, 'bot');
+                }
+            } else {
+                // Replace newlines in the reply with <br> for HTML display
+                appendBubble(`<strong>Assistant:</strong><br>${(data.reply || '(No reply received)').replace(/\n/g, '<br>')}`, 'bot');
+            }
+        } catch (err) {
+             // Remove thinking bubble on network error too
+             const currentThinkingBubble = chatWindow.querySelector('.bubble.bot:last-child');
+             if (currentThinkingBubble && currentThinkingBubble.innerHTML.includes('Thinking...')) {
+                currentThinkingBubble.remove();
+             }
+            appendBubble('<strong>Assistant (error):</strong><br>Network or script error: ' + err.toString(), 'bot');
+        } finally {
+            askBtn.disabled = false;
+        }
+    });
+
+  </script>
+</body>
+</html>
