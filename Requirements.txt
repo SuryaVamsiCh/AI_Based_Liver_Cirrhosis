@@ -1,9 +1,8 @@
 flask
-os
-traceback
 joblib
 pandas
 numpy
-google.generativeai
-sklearn
-imblearn
+google-generativeai
+scikit-learn
+imbalanced-learn
+gunicorn
